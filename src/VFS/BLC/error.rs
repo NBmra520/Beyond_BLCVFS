@@ -20,6 +20,9 @@ pub enum BlcError {
     
     #[error("Invalid offset: expected {expected}, got {actual}")]
     InvalidOffset { expected: usize, actual: usize },
+
+    #[error("Index too large to allocate: {0} entries")]
+    IndexAllocationFailed(usize),
 }
 
 pub type Result<T> = std::result::Result<T, BlcError>;

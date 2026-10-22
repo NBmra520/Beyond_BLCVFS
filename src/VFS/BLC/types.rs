@@ -31,7 +31,7 @@ pub struct FileInfo {
     pub block_type: u8,
     pub b_use_encrypt: bool,
     pub iv_seed: Option<i64>,
-    pub file_tag: i32,
+    pub file_tag: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,16 +40,17 @@ pub struct ChunkInfo {
     pub content_md5: UInt128,
     pub length: i64,
     pub block_type: u8,
-    pub file_tag: i32,
+    pub file_tag: i64,
     pub files_count: i32,
     pub files: Vec<FileInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlcMainInfo {
+    pub code_version: i32,
     pub version: i32,
     pub group_cfg_name: String,
-    pub group_cfg_hash_name: u32,
+    pub group_cfg_hash_name: u64,
     pub group_file_info_num: i32,
     pub group_chunks_length: i64,
     pub block_type: u8,

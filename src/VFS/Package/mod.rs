@@ -46,7 +46,7 @@ impl Package {
         
         let mut chunk_files = HashMap::new();
         for chunk in &main_info.all_chunks {
-            let chunk_md5 = chunk.md5_name.to_hex();
+            let chunk_md5 = chunk.md5_name.to_hex().to_uppercase();
             let chk_file = package_folder.join(format!("{}.chk", chunk_md5));
             if chk_file.exists() {
                 chunk_files.insert(chunk_md5, chk_file);
@@ -89,7 +89,7 @@ impl Package {
             .get(path)
             .ok_or_else(|| BlcError::FileNotFound(PathBuf::from(path)))?;
         
-        let chunk_md5 = file_info.file_chunk_md5_name.to_hex();
+        let chunk_md5 = file_info.file_chunk_md5_name.to_hex().to_uppercase();
         let chk_path = self.chunk_files
             .get(&chunk_md5)
             .ok_or_else(|| BlcError::ChunkNotFound(chunk_md5.clone()))?;
@@ -115,7 +115,7 @@ impl Package {
                     "File marked as encrypted but missing iv_seed".to_string()
                 ))?;
             
-            self.decryptor.decrypt_file(self.main_info.version, iv_seed, data)?
+            self.decryptor.decrypt_file(iv_seed, data)?
         } else {
             data.to_vec()
         };
