@@ -27,6 +27,3 @@ eframe = "0.29"
 egui = "0.29"
 rfd = "0.15"
 rayon = "1.10"
-
-[dev-dependencies]
-chacha20 = "0.9"
