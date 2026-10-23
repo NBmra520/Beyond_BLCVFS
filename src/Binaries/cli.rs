@@ -597,7 +597,7 @@ fn cmd_packages(vfs: &Option<MultiVFS>) {
 
 fn print_banner() {
     println!("╔════════════════════════════════════════╗");
-    println!("║     BLC Virtual File System v0.1.0     ║");
+    println!("║     BLC Virtual File System v1.6.0     ║");
     println!("║        Rust Implementation             ║");
     println!("╚════════════════════════════════════════╝");
     println!();

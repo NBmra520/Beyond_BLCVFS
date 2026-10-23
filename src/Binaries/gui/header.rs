@@ -38,7 +38,7 @@ impl HeaderUI {
         };
 
         ui.horizontal(|ui| {
-            ui.heading("BLC Virtual File System v0.1.0");
+            ui.heading("BLC Virtual File System v1.6.0");
             ui.separator();
 
             if ui.button("📁 Mount").clicked() {
