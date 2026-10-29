@@ -324,8 +324,8 @@ The GUI provides:
 - `serde_json` v1.0 - JSON serialization for .bytes parsing
 
 ### GUI Dependencies
-- `eframe` v0.29 - egui framework integration
-- `egui` v0.29 - Immediate mode GUI library
+- `eframe` v0.31 - egui framework integration
+- `egui` v0.31 - Immediate mode GUI library
 - `rfd` v0.15 - Native file dialogs
 - `rayon` v1.10 - Parallel processing
 
