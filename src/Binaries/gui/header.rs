@@ -16,6 +16,7 @@ pub struct HeaderResponse {
 }
 
 impl HeaderUI {
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         ui: &mut egui::Ui,
         has_vfs: bool,
@@ -23,6 +24,7 @@ impl HeaderUI {
         has_parent_dir: bool,
         is_manifest_view: bool,
         manifest_has_parent: bool,
+        ab_decrypt: &mut bool,
     ) -> HeaderResponse {
         let mut response = HeaderResponse {
             mount_clicked: false,
@@ -38,7 +40,7 @@ impl HeaderUI {
         };
 
         ui.horizontal(|ui| {
-            ui.heading("BLC Virtual File System v1.6.0");
+            ui.heading("BLC Virtual File System v1.61");
             ui.separator();
 
             if ui.button("📁 Mount").clicked() {
@@ -86,6 +88,15 @@ impl HeaderUI {
                         response.packages_clicked = true;
                     }
                 }
+
+                ui.separator();
+                ui.checkbox(ab_decrypt, "Decrypt AB")
+                    .on_hover_text(
+                        "Checked: decrypt the Endfield container and rebuild each bundle as UnityFS .ab\n\
+                         NOTE: rebuilding strips Endfield-only fields, so some information is lost.\n\
+                         Unchecked: export the raw VFS bytes without decrypting — for the complete\n\
+                         bundle, load these in AnimeStudio with game type ArknightsEndfield.",
+                    );
             }
         });
 

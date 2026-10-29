@@ -51,6 +51,8 @@ pub struct BlcVfsApp {
     show_manifest_search: bool,
     // Async extraction state
     extraction_state: Option<ExtractionState>,
+    // Rebuild CAB nodes into UnityFS .ab bundles on extraction
+    ab_decrypt: bool,
 }
 
 struct ExtractionState {
@@ -85,6 +87,7 @@ impl Default for BlcVfsApp {
             manifest_search_results: Vec::new(),
             show_manifest_search: false,
             extraction_state: None,
+            ab_decrypt: false,
         }
     }
 }
@@ -163,7 +166,7 @@ impl eframe::App for BlcVfsApp {
 
                     for idx in state.current_index..end_index {
                         let file = &state.files[idx];
-                        match ExtractionManager::extract_single_file(vfs, file, &output_dir) {
+                        match ExtractionManager::extract_single_file(vfs, file, &output_dir, self.ab_decrypt) {
                             Ok(()) => state.success += 1,
                             Err(_) => state.failed += 1,
                         }
@@ -212,6 +215,7 @@ impl BlcVfsApp {
             has_parent_dir,
             is_manifest_view,
             manifest_has_parent,
+            &mut self.ab_decrypt,
         );
 
         // Handle header responses
@@ -655,6 +659,57 @@ impl BlcVfsApp {
             
             // 构建输出路径，保留虚拟路径结构
             let output_dir = std::path::PathBuf::from("output");
+            let virtual_parent = std::path::Path::new(virtual_path)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty());
+
+            // 从虚拟路径获取 asset 路径（去掉 .ab 后缀）
+            let _asset_path = virtual_path.strip_suffix(".ab").unwrap_or(virtual_path);
+
+            if self.ab_decrypt && blc_vfs::is_bundle_node(&ab_vfs_path) {
+                match blc_vfs::export_bundles(&ab_data, &ab_vfs_path, true) {
+                    Ok(files) => {
+                        let mut exported = Vec::new();
+                        for file in files {
+                            let mut output_path = output_dir.clone();
+                            if let Some(dir) = virtual_parent {
+                                output_path.push(dir);
+                            }
+                            output_path.push(&file.name);
+                            if let Some(parent) = output_path.parent() {
+                                if let Err(e) = std::fs::create_dir_all(parent) {
+                                    self.status_message = format!("Failed to create directory: {}", e);
+                                    return;
+                                }
+                            }
+                            match std::fs::write(&output_path, &file.bytes) {
+                                Ok(_) => exported.push(output_path),
+                                Err(e) => {
+                                    self.status_message = format!("✗ Failed to write: {}", e);
+                                    return;
+                                }
+                            }
+                        }
+                        self.status_message = format!(
+                            "✓ Exported (decrypted): {} -> {}",
+                            virtual_path,
+                            exported
+                                .iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        println!(
+                            "[DEBUG] extract_manifest_file: AB decrypt failed for '{}': {} (writing raw)",
+                            virtual_path, e
+                        );
+                    }
+                }
+            }
+
             let output_path = output_dir.join(virtual_path);
 
             // 确保父目录存在
@@ -665,11 +720,7 @@ impl BlcVfsApp {
                 }
             }
 
-            // 从虚拟路径获取 asset 路径（去掉 .ab 后缀）
-            let _asset_path = virtual_path.strip_suffix(".ab").unwrap_or(virtual_path);
-
-            // 这里需要根据 AB 文件格式提取具体的 asset
-            // 暂时将整个 AB 文件复制到输出目录
+            // 未解密（或解密失败）：原样写出 AB 容器字节
             match std::fs::write(&output_path, ab_data) {
                 Ok(_) => {
                     self.status_message = format!("✓ Exported: {} -> {}", virtual_path, output_path.display());
@@ -969,7 +1020,7 @@ impl BlcVfsApp {
         if let Some(vfs) = &self.vfs {
             let output_dir = PathBuf::from("output");
 
-            match ExtractionManager::extract_single_file(vfs, file_path, &output_dir) {
+            match ExtractionManager::extract_single_file(vfs, file_path, &output_dir, self.ab_decrypt) {
                 Ok(()) => {
                     self.status_message = format!("✓ Extracted: {}", file_path);
                 }

@@ -1,0 +1,215 @@
+// Adapted from Myrtle (assets/unpacker/src/unity).
+use std::io;
+
+use super::endian_reader::{EndianReader, invalid_data};
+
+#[allow(dead_code)]
+pub struct TypeTreeNode {
+    pub type_name: String,
+    pub name: String,
+    pub byte_size: i32,
+    pub version: u16,
+    pub level: u8,
+    pub type_flags: u8,
+    pub meta_flag: u32,
+    pub children: Vec<Self>,
+}
+
+struct FlatNode {
+    version: u16,
+    level: u8,
+    type_flags: u8,
+    type_str_offset: u32,
+    name_str_offset: u32,
+    byte_size: i32,
+    meta_flag: u32,
+}
+
+/// Read one serialized type's type-tree blob. An EMPTY blob (zero nodes) is legal —
+/// a stripped type carries no tree — and yields `Ok(None)` rather than an error: the
+/// blob's bytes are still consumed, so the rest of the file parses.
+pub fn read_type_tree_blob(r: &mut EndianReader) -> Result<Option<TypeTreeNode>, io::Error> {
+    let node_count = r.read_i32()?;
+    let string_buffer_size = r.read_i32()?;
+    if node_count < 0 || string_buffer_size < 0 {
+        return Err(invalid_data(format!(
+            "negative type tree size: {node_count} nodes, {string_buffer_size} bytes"
+        )));
+    }
+
+    // Each flat node is 32 bytes; cap the reservation so a garbage count can't over-allocate.
+    let mut flat_nodes = Vec::with_capacity((node_count as usize).min(r.remaining() / 32));
+    for _ in 0..node_count {
+        flat_nodes.push(FlatNode {
+            version: r.read_u16()?,
+            level: r.read_u8()?,
+            type_flags: r.read_u8()?,
+            type_str_offset: r.read_u32()?,
+            name_str_offset: r.read_u32()?,
+            byte_size: r.read_i32()?,
+            meta_flag: {
+                let _ = r.read_i32()?; // skip index
+                r.read_u32()?
+            },
+        });
+        let _ = r.read_u64()?; // skip ref_type_hash
+    }
+
+    let string_buffer = r.read_bytes(string_buffer_size as usize)?;
+
+    let mut nodes: Vec<TypeTreeNode> = flat_nodes
+        .iter()
+        .map(|f| TypeTreeNode {
+            type_name: resolve_string(f.type_str_offset, &string_buffer),
+            name: resolve_string(f.name_str_offset, &string_buffer),
+            byte_size: f.byte_size,
+            version: f.version,
+            level: f.level,
+            type_flags: f.type_flags,
+            meta_flag: f.meta_flag,
+            children: Vec::new(),
+        })
+        .collect();
+
+    for i in (1..nodes.len()).rev() {
+        let child = nodes.remove(i);
+        // Find parent: walk backwards from i to find level < child.level
+        for j in (0..i).rev() {
+            if nodes[j].level < child.level {
+                nodes[j].children.insert(0, child);
+                break;
+            }
+        }
+    }
+
+    Ok(nodes.into_iter().next())
+}
+
+fn resolve_string(offset: u32, string_buffer: &[u8]) -> String {
+    if offset & 0x80000000 != 0 {
+        let idx = offset & 0x7FFFFFFF;
+        common_string(idx).to_string()
+    } else {
+        let start = (offset as usize).min(string_buffer.len());
+        let end = string_buffer[start..]
+            .iter()
+            .position(|&b| b == 0)
+            .map_or(string_buffer.len(), |p| start + p);
+        String::from_utf8_lossy(&string_buffer[start..end]).into_owned()
+    }
+}
+
+const fn common_string(offset: u32) -> &'static str {
+    match offset {
+        0 => "AABB",
+        5 => "AnimationClip",
+        19 => "AnimationCurve",
+        34 => "AnimationState",
+        49 => "Array",
+        55 => "Base",
+        60 => "BitField",
+        69 => "bitset",
+        76 => "bool",
+        81 => "char",
+        86 => "ColorRGBA",
+        96 => "Component",
+        106 => "data",
+        111 => "deque",
+        117 => "double",
+        124 => "dynamic_array",
+        138 => "FastPropertyName",
+        155 => "first",
+        161 => "float",
+        167 => "Font",
+        172 => "GameObject",
+        183 => "Generic Mono",
+        196 => "GradientNEW",
+        208 => "GUID",
+        213 => "GUIStyle",
+        222 => "int",
+        226 => "list",
+        231 => "long long",
+        241 => "map",
+        245 => "Matrix4x4f",
+        256 => "MdFour",
+        263 => "MonoBehaviour",
+        277 => "MonoScript",
+        288 => "m_ByteSize",
+        299 => "m_Curve",
+        307 => "m_EditorClassIdentifier",
+        331 => "m_EditorHideFlags",
+        349 => "m_Enabled",
+        359 => "m_ExtensionPtr",
+        374 => "m_GameObject",
+        389 => "m_Index",
+        397 => "m_IsArray",
+        407 => "m_IsStatic",
+        416 => "m_MetaFlag",
+        427 => "m_Name",
+        434 => "m_ObjectHideFlags",
+        452 => "m_PrefabInternal",
+        469 => "m_PrefabParentObject",
+        490 => "m_Script",
+        499 => "m_StaticEditorFlags",
+        519 => "m_Type",
+        526 => "m_Version",
+        536 => "Object",
+        543 => "pair",
+        548 => "PPtr<Component>",
+        564 => "PPtr<GameObject>",
+        581 => "PPtr<Material>",
+        596 => "PPtr<MonoBehaviour>",
+        616 => "PPtr<MonoScript>",
+        633 => "PPtr<Object>",
+        646 => "PPtr<Prefab>",
+        659 => "PPtr<Sprite>",
+        672 => "PPtr<TextAsset>",
+        688 => "PPtr<Texture>",
+        702 => "PPtr<Texture2D>",
+        718 => "PPtr<Transform>",
+        734 => "Prefab",
+        741 => "Quaternionf",
+        753 => "Rectf",
+        759 => "RectInt",
+        767 => "RectOffset",
+        778 => "second",
+        785 => "set",
+        789 => "short",
+        795 => "size",
+        800 => "SInt16",
+        807 => "SInt32",
+        814 => "SInt64",
+        821 => "SInt8",
+        827 => "staticvector",
+        840 => "string",
+        847 => "TextAsset",
+        857 => "TextMesh",
+        866 => "Texture",
+        874 => "Texture2D",
+        884 => "Transform",
+        894 => "TypelessData",
+        907 => "UInt16",
+        914 => "UInt32",
+        921 => "UInt64",
+        928 => "UInt8",
+        934 => "unsigned int",
+        947 => "unsigned long long",
+        966 => "unsigned short",
+        981 => "vector",
+        988 => "Vector2f",
+        997 => "Vector3f",
+        1006 => "Vector4f",
+        1015 => "m_ScriptingClassIdentifier",
+        1042 => "Gradient",
+        1051 => "Type*",
+        1057 => "int2_storage",
+        1070 => "int3_storage",
+        1083 => "BoundsInt",
+        1093 => "m_CorrespondingSourceObject",
+        1121 => "m_PrefabInstance",
+        1138 => "m_PrefabAsset",
+        1152 => "FileSize",
+        1161 => "Hash128",
+        _ => "<unknown>",
+    }
+}

@@ -11,6 +11,7 @@ impl ExtractionManager {
         vfs: &blc_vfs::MultiVFS,
         file_path: &str,
         output_dir: &PathBuf,
+        ab_decrypt: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("[DEBUG] extract_file: reading '{}'", file_path);
 
@@ -48,7 +49,37 @@ impl ExtractionManager {
         // Check if it's a compress bin (filename contains "compress")
         let is_compress_bin = is_bin_in_target_pkg && file_path.to_lowercase().contains("compress");
 
-        if is_bytes_in_target_pkg {
+        if ab_decrypt && blc_vfs::is_bundle_node(file_path) {
+            // Decrypt the Endfield VFS container and rebuild every bundle node
+            // into a standalone UnityFS .ab readable by stock AssetStudio.
+            let parent = std::path::Path::new(file_path)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty());
+            match blc_vfs::export_bundles(&data, file_path, true) {
+                Ok(files) => {
+                    for file in files {
+                        let mut output_path = output_dir.clone();
+                        if let Some(dir) = parent {
+                            output_path.push(dir);
+                        }
+                        output_path.push(&file.name);
+                        println!(
+                            "[DEBUG] extract_file: rebuilt AB '{}' -> {:?} ({} bytes)",
+                            file_path, output_path, file.bytes.len()
+                        );
+                        Self::write_file(&output_path, file.bytes)?;
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "[DEBUG] extract_file: AB decrypt failed for '{}': {} (writing raw)",
+                        file_path, e
+                    );
+                    let output_path = output_dir.join(file_path);
+                    Self::write_file(&output_path, data)?;
+                }
+            }
+        } else if is_bytes_in_target_pkg {
             let json_str = blc_vfs::SparkBytesParser::parse_to_json(&data);
             let json_path = file_path.strip_suffix(".bytes")
                 .map(|s| format!("{}.json", s))

@@ -39,6 +39,8 @@ fn handle_command(parts: Vec<&str>, vfs: &mut Option<MultiVFS>, current_dir: &mu
         "extract" => cmd_extract(parts, vfs, current_dir),
         "extract-dir" => cmd_extract_dir(parts, vfs, current_dir),
         "extract-all" => cmd_extract_all(parts, vfs, current_dir),
+        "extract-ab" => cmd_extract_ab(parts, vfs, current_dir),
+        "extract-ab-all" => cmd_extract_ab_all(parts, vfs, current_dir),
         "extract-pck" => cmd_extract_pck(parts, vfs, current_dir),
         "extract-pck-all" => cmd_extract_pck_all(parts, vfs, current_dir),
         "extract-pck-entries" => cmd_extract_pck_entries(parts, vfs, current_dir),
@@ -316,6 +318,151 @@ fn cmd_extract_all(parts: Vec<&str>, vfs: &Option<MultiVFS>, current_dir: &Strin
             println!("✗ Please mount a folder first");
         }
     }
+}
+
+fn cmd_extract_ab(parts: Vec<&str>, vfs: &Option<MultiVFS>, current_dir: &String) {
+    if parts.len() < 2 {
+        println!("Usage: extract-ab <bundle_file> [output_dir] [--decrypt]");
+        println!("  Without --decrypt the raw VFS bytes are written as-is.");
+        println!("  With --decrypt the Endfield container is decrypted and each bundle is rebuilt into a UnityFS .ab.");
+        println!("  NOTE: --decrypt strips Endfield-only fields, so some information is lost.");
+        println!("  For the complete bundle, export raw and load it in AnimeStudio (ArknightsEndfield).");
+        return;
+    }
+
+    let Some(mounted_vfs) = vfs else {
+        println!("✗ Please mount a folder first");
+        return;
+    };
+
+    let file_path = if parts[1].starts_with('/') {
+        parts[1][1..].to_string()
+    } else {
+        join_paths(current_dir, parts[1])
+    };
+
+    if !is_file(mounted_vfs, &file_path) {
+        println!("✗ File not found: {}", file_path);
+        return;
+    }
+
+    let (decrypt, output_dir) = parse_ab_options(&parts[2..]);
+
+    match extract_ab_file(mounted_vfs, &file_path, &output_dir, decrypt) {
+        Ok(count) => println!("✓ {} file(s) exported to: {}", count, output_dir.display()),
+        Err(e) => println!("✗ AB export failed: {}", e),
+    }
+}
+
+fn cmd_extract_ab_all(parts: Vec<&str>, vfs: &Option<MultiVFS>, current_dir: &String) {
+    let Some(mounted_vfs) = vfs else {
+        println!("✗ Please mount a folder first");
+        return;
+    };
+
+    let (decrypt, output_dir) = parse_ab_options(&parts[1..]);
+
+    let all_files = mounted_vfs.list_all_files();
+    let current_prefix = if current_dir.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", current_dir.trim_matches('/'))
+    };
+    let files: Vec<&str> = all_files
+        .iter()
+        .copied()
+        .filter(|f| (current_dir.is_empty() || f.starts_with(&current_prefix)) && blc_vfs::is_bundle_node(f))
+        .collect();
+
+    if files.is_empty() {
+        println!("No bundle files found in /{}", current_dir);
+        return;
+    }
+
+    println!(
+        "Exporting {} bundle file(s) ({}) -> {}",
+        files.len(),
+        if decrypt { "decrypt: rebuild UnityFS" } else { "raw VFS bytes" },
+        output_dir.display()
+    );
+
+    let mut success = 0;
+    let mut failed = 0;
+    let mut bundles = 0;
+    for (i, file) in files.iter().enumerate() {
+        match extract_ab_file(mounted_vfs, file, &output_dir, decrypt) {
+            Ok(count) => {
+                success += 1;
+                bundles += count;
+            }
+            Err(e) => {
+                println!("✗ Failed to export {}: {}", file, e);
+                failed += 1;
+            }
+        }
+        if (i + 1) % 100 == 0 {
+            println!("Progress: {}/{}", i + 1, files.len());
+        }
+    }
+
+    println!("\nAB export complete!");
+    println!("  Files: {}", success);
+    println!("  Bundles written: {}", bundles);
+    println!("  Failed: {}", failed);
+    println!("  Output: {}", output_dir.display());
+}
+
+/// Parse the optional `[output_dir] [--decrypt]` tail shared by the AB commands.
+fn parse_ab_options(args: &[&str]) -> (bool, PathBuf) {
+    let mut decrypt = false;
+    let mut output_dir = PathBuf::from("output");
+    for arg in args {
+        if *arg == "--decrypt" {
+            decrypt = true;
+        } else {
+            output_dir = PathBuf::from(arg);
+        }
+    }
+    (decrypt, output_dir)
+}
+
+/// Export one bundle file. With `decrypt` the Endfield VFS container is
+/// decrypted and each SerializedFile node is rebuilt into a UnityFS bundle;
+/// otherwise the raw bytes are written out untouched.
+fn extract_ab_file(
+    vfs: &MultiVFS,
+    file_path: &str,
+    output_dir: &PathBuf,
+    decrypt: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let data = vfs.read_file(file_path)?;
+    let files = blc_vfs::export_bundles(&data, file_path, decrypt)?;
+
+    let parent = std::path::Path::new(file_path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty());
+
+    let mut written = 0;
+    for file in files {
+        let mut output_path = output_dir.to_path_buf();
+        if let Some(dir) = parent {
+            output_path.push(dir);
+        }
+        output_path.push(&file.name);
+        if let Some(dir) = output_path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&output_path, &file.bytes)?;
+        println!(
+            "✓ {}: {} ({} bytes)",
+            if decrypt { "decrypted" } else { "raw" },
+            output_path.display(),
+            file.bytes.len()
+        );
+        written += 1;
+    }
+
+    Ok(written)
 }
 
 fn cmd_extract_pck(parts: Vec<&str>, vfs: &Option<MultiVFS>, current_dir: &String) {
@@ -597,7 +744,7 @@ fn cmd_packages(vfs: &Option<MultiVFS>) {
 
 fn print_banner() {
     println!("╔════════════════════════════════════════╗");
-    println!("║     BLC Virtual File System v1.6.0     ║");
+    println!("║     BLC Virtual File System v1.61      ║");
     println!("║        Rust Implementation             ║");
     println!("╚════════════════════════════════════════╝");
     println!();
@@ -612,6 +759,11 @@ fn print_help() {
     println!("  extract <file>                 - Extract single file");
     println!("  extract-dir <dir> [output]     - Extract all files in a directory");
     println!("  extract-all [output_dir]       - Extract all files");
+    println!("  extract-ab <file> [output] [--decrypt] - Export one bundle (raw, or decrypted .ab)");
+    println!("  extract-ab-all [output] [--decrypt]    - Export all bundles in current dir");
+    println!("      --decrypt strips Endfield-only fields, so some information is lost;");
+    println!("      for the complete bundle, export raw and load it in AnimeStudio");
+    println!("      (game type ArknightsEndfield).");
     println!("  extract-pck <file> [output]    - Extract PCK file (decrypt VFS, output .pck)");
     println!("  extract-pck-all [output]       - Extract all PCK files from VFS");
     println!("  extract-pck-entries <file> [out] - Extract WEM/BNK files from PCK");

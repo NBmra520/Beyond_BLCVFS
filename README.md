@@ -77,6 +77,10 @@ This project incorporates code and concepts from the following sources:
 
 ### Unlicensed Sources:
 
+- **[fluorite.moe](https://github.com/Eltik/fluorite.moe)** by Eltik
+  - Endfield AB (UnityFS) decryption / VFS container extraction implementation reference
+  - **Note:** This repository has no explicit license; code used with attribution
+
 - **[FkArkEnd](https://github.com/shiikwi/FkArkEnd)** by shiikwi
   - Binary parsing reference
   - **Note:** This repository has no explicit license; code used with attribution
@@ -88,6 +92,7 @@ This project incorporates code and concepts from the following sources:
 ### Core Functionality
 - **BLC File Parsing**: Complete support for BLC virtual file system format
 - **Decryption**: ChaCha20-based automatic decryption for encrypted files
+- **AB Decryption (optional)**: rebuild Endfield-encrypted `.ab` payloads into standard UnityFS bundles readable by stock AssetStudio (CLI `extract-ab --decrypt`, GUI `Decrypt AB` checkbox). The rebuild drops Endfield-only fields, so some information is lost — for the complete bundle export the raw bytes and load them in AnimeStudio (game type `ArknightsEndfield`). See [fluorite.moe](https://github.com/Eltik/fluorite.moe) for the AB decryption reference.
 - **Multiple File Types**: Support for BLC, PCK, and xLua formats
 - **High Performance**: Memory-mapped I/O for efficient large file handling
 - **Zero-Copy Operations**: Optimized data handling to minimize memory usage

@@ -1,6 +1,6 @@
 [package]
 name = "blc-vfs"
-version = "1.6.0"
+version = "1.61.0"
 edition = "2024"
 
 [[bin]]
@@ -22,6 +22,8 @@ walkdir = "2.5"
 md-5 = "0.10"
 byteorder = "1.5"
 brotli-decompressor = "4.0"
+lz4 = "1.28"
+lz4_flex = "0.12"
 
 eframe = "0.29"
 egui = "0.29"
